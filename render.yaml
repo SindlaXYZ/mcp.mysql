@@ -1,0 +1,23 @@
+# Render Blueprint. Deploy with: New > Blueprint > point to this repo.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: mysql-mcp
+    runtime: node
+    region: frankfurt
+    plan: free            # change to "starter" ($7/mo) to remove spin-down
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: MCP_AUTH_TOKEN
+        generateValue: true   # Render generates a secure random token
+      - key: MYSQL_READONLY
+        value: "true"
+      - key: MYSQL_MAX_ROWS
+        value: "1000"
+      - key: MYSQL_CONNECT_TIMEOUT_MS
+        value: "10000"
+      # Optional: restrict which database hosts clients may connect to.
+      # - key: ALLOWED_DB_HOSTS
+      #   value: "db1.example.com,db2.example.com"
