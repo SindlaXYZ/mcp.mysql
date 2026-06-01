@@ -18,11 +18,53 @@ function jsonResult(value: unknown) {
   return { content: [{ type: "text" as const, text: toJson(value) }] };
 }
 
+/**
+ * Build a detailed, human-readable error string.
+ *
+ * mysql2 errors often carry the useful information in fields other than
+ * `message` (which can be empty) — notably `code` (e.g. "ECONNREFUSED",
+ * "ETIMEDOUT", "ER_ACCESS_DENIED_ERROR"), `errno`, `sqlState`, `address` and
+ * `port`. We surface all of them so failures are actually diagnosable.
+ */
+function formatError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return `Error: ${String(error)}`;
+  }
+
+  const err = error as Error & {
+    code?: string;
+    errno?: number;
+    sqlState?: string;
+    sqlMessage?: string;
+    address?: string;
+    port?: number;
+    fatal?: boolean;
+  };
+
+  // Prefer the driver's sqlMessage, then message, then the error name.
+  const baseMessage =
+    (err.sqlMessage && err.sqlMessage.trim()) ||
+    (err.message && err.message.trim()) ||
+    err.name ||
+    "Unknown error";
+
+  const details: string[] = [];
+  if (err.code) details.push(`code=${err.code}`);
+  if (typeof err.errno === "number") details.push(`errno=${err.errno}`);
+  if (err.sqlState) details.push(`sqlState=${err.sqlState}`);
+  if (err.address) details.push(`address=${err.address}`);
+  if (typeof err.port === "number") details.push(`port=${err.port}`);
+
+  const suffix = details.length > 0 ? ` (${details.join(", ")})` : "";
+  return `Error: ${baseMessage}${suffix}`;
+}
+
 function errorResult(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+  // Log the full error server-side (stderr → Render logs) for deeper debugging.
+  console.error("Tool error:", error);
   return {
     isError: true,
-    content: [{ type: "text" as const, text: `Error: ${message}` }],
+    content: [{ type: "text" as const, text: formatError(error) }],
   };
 }
 
