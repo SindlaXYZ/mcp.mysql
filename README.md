@@ -1,6 +1,6 @@
 # mysql-mcp
 
-A generic, always-on [Model Context Protocol](https://modelcontextprotocol.io) server that exposes **read-only** access to a MySQL database over **Streamable HTTP**. It is built to be hosted (e.g. on Render) and loaded into Claude Desktop / Claude Code as a remote connector.
+A generic, always-on [Model Context Protocol](https://modelcontextprotocol.io) server that exposes **configurable** access to a MySQL database over **Streamable HTTP** — read-only by default, with per-operation flags to enable `INSERT`, `UPDATE` and `DELETE`. It is built to be hosted (e.g. on Render) and loaded into Claude Desktop / Claude Code as a remote connector.
 
 The key design point: **the server does not know which database to connect to.** Each client supplies its own MySQL credentials per connection, as an HTTP header. The server is a stateless gateway — it stores no database credentials.
 
@@ -13,7 +13,7 @@ Every request to `POST /mcp` carries two headers:
 | `Authorization: Bearer <token>` | Authenticates to *this server* (the endpoint gate). Required when `MCP_AUTH_TOKEN` is set. |
 | `X-DB-DSN: mysql://user:password@host:3306/database` | The database *this client* wants to query. URL-encode special characters in the user/password. |
 
-The server reads the DSN, opens a short-lived connection, runs the requested read-only query, returns the rows, and closes the connection. Credentials are never logged or persisted.
+The server reads the DSN, opens a short-lived connection, runs the requested query (within the operations the server is configured to permit), returns the result, and closes the connection. Credentials are never logged or persisted.
 
 ## Tools exposed
 
@@ -21,7 +21,7 @@ The server reads the DSN, opens a short-lived connection, runs the requested rea
 | --- | --- |
 | `list_tables` | Lists all tables in the connected database. |
 | `describe_table` | Columns, types, keys and comments for one table (validated against the live schema). |
-| `run_query` | Runs a single read-only SQL statement and returns rows as JSON. Uses `?` placeholders + bound parameters. |
+| `run_query` | Runs a single SQL statement (`SELECT`/`INSERT`/`UPDATE`/`DELETE`, subject to the server's per-operation permissions) and returns the result as JSON. Uses `?` placeholders + bound parameters. |
 
 ## Requirements
 
@@ -107,7 +107,10 @@ Header values are kept in `env` and referenced with `${...}` because `mcp-remote
 | --- | --- | --- |
 | `PORT` | `3000` | Listen port. Render injects this automatically. |
 | `MCP_AUTH_TOKEN` | (unset) | Bearer token required on every request. If unset, the endpoint is **open**. |
-| `MYSQL_READONLY` | `true` | Block any non-read statement. |
+| `MYSQL_ALLOW_SELECT` | `true` | Allow reads — `list_tables`, `describe_table`, and `SELECT`/`SHOW`/`DESCRIBE`/`EXPLAIN` queries. |
+| `MYSQL_ALLOW_INSERT` | `false` | Allow `INSERT` statements. |
+| `MYSQL_ALLOW_UPDATE` | `false` | Allow `UPDATE` statements. |
+| `MYSQL_ALLOW_DELETE` | `false` | Allow `DELETE` statements. |
 | `MYSQL_MAX_ROWS` | `1000` | Max rows returned per query. |
 | `MYSQL_CONNECT_TIMEOUT_MS` | `10000` | MySQL connection timeout. |
 | `ALLOWED_DB_HOSTS` | (unset) | Comma-separated allowlist of DB hosts. Unset = any host. |
@@ -118,12 +121,14 @@ A public endpoint that connects to arbitrary databases with client-supplied cred
 
 - **HTTPS only.** On Render this is automatic; never expose it over plain HTTP — the credentials travel in headers.
 - **Set `MCP_AUTH_TOKEN`.** Without it, anyone who finds the URL can use your server as a proxy to reach any reachable database. The token is the gate that keeps that to people you trust.
-- **Use a read-only database user.** This is the real boundary. On the database side, grant `SELECT` only:
+- **The `MYSQL_ALLOW_*` flags are an application-level gate.** Each statement is classified by its leading keyword (`SELECT`/`SHOW`/… → read, `INSERT`/`UPDATE`/`DELETE` → the matching write) and rejected unless that operation is enabled. Anything else — `CREATE`, `DROP`, `ALTER`, `TRUNCATE`, … — is always rejected. This is convenient but **not** a substitute for database privileges.
+- **Scope the database user to match.** This is the real boundary. For a read-only deployment, grant `SELECT` only:
   ```sql
   CREATE USER 'mcp_readonly'@'%' IDENTIFIED BY 'a_strong_password';
   GRANT SELECT ON my_database.* TO 'mcp_readonly'@'%';
   FLUSH PRIVILEGES;
   ```
+  If you enable `MYSQL_ALLOW_INSERT` / `UPDATE` / `DELETE`, grant the corresponding privileges (and no more) to the database user so the two layers agree.
 - **Credentials are never logged or stored.** The DSN lives only for the duration of one request.
 - **`ALLOWED_DB_HOSTS`** limits which hosts clients may target — defense against using the gateway to probe internal networks (SSRF).
 - For production, also add **rate limiting** in front of the service and consider Render's static outbound IPs so target databases can firewall by IP.

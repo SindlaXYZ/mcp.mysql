@@ -1,7 +1,7 @@
 {
   "name": "mysql-mcp",
   "version": "0.1.0",
-  "description": "Generic Model Context Protocol server exposing read-only access to a MySQL database over Streamable HTTP. Database credentials are supplied per connection by the client.",
+  "description": "Generic Model Context Protocol server exposing configurable (read-only by default) access to a MySQL database over Streamable HTTP. Database credentials are supplied per connection by the client.",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

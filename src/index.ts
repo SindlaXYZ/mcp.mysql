@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, type Config } from "./config.js";
 import { Database } from "./db.js";
 import { parseDsn } from "./dsn.js";
 import { registerTools } from "./tools.js";
@@ -58,7 +58,7 @@ app.post("/mcp", requireAuth, async (req: Request, res: Response) => {
     if (dsn !== undefined && dsn.trim() !== "") {
       const dbConfig = parseDsn(dsn, config.allowedDbHosts);
       db = new Database(dbConfig, {
-        readOnly: config.readOnly,
+        allowedOperations: config.allowedOperations,
         maxRows: config.maxRows,
         connectTimeoutMs: config.connectTimeoutMs,
       });
@@ -69,7 +69,10 @@ app.post("/mcp", requireAuth, async (req: Request, res: Response) => {
   }
 
   const server = new McpServer({ name: "mysql-mcp", version: "0.1.0" });
-  registerTools(server, db, { maxRows: config.maxRows });
+  registerTools(server, db, {
+    maxRows: config.maxRows,
+    allowedOperations: config.allowedOperations,
+  });
 
   const transport = new StreamableHTTPServerTransport({
     // Stateless: no session is kept between requests.
@@ -105,10 +108,18 @@ function methodNotAllowed(_req: Request, res: Response): void {
 app.get("/mcp", methodNotAllowed);
 app.delete("/mcp", methodNotAllowed);
 
+/** Human-readable summary of which operations are enabled, for the startup log. */
+function describeAllowedOperations(ops: Config["allowedOperations"]): string {
+  const enabled = (Object.keys(ops) as (keyof Config["allowedOperations"])[])
+    .filter((op) => ops[op])
+    .map((op) => op.toUpperCase());
+  return enabled.length > 0 ? enabled.join(", ") : "none";
+}
+
 app.listen(config.port, "0.0.0.0", () => {
   console.error(
     `mysql-mcp listening on 0.0.0.0:${config.port} ` +
-      `(read-only: ${config.readOnly}, ` +
+      `(allowed: ${describeAllowedOperations(config.allowedOperations)}, ` +
       `auth: ${config.authToken !== null ? "on" : "OFF — set MCP_AUTH_TOKEN"}, ` +
       `host allowlist: ${config.allowedDbHosts !== null ? config.allowedDbHosts.join(", ") : "none"})`,
   );

@@ -12,8 +12,14 @@ services:
     envVars:
       - key: MCP_AUTH_TOKEN
         generateValue: true   # Render generates a secure random token
-      - key: MYSQL_READONLY
+      - key: MYSQL_ALLOW_SELECT
         value: "true"
+      - key: MYSQL_ALLOW_INSERT
+        value: "false"
+      - key: MYSQL_ALLOW_UPDATE
+        value: "false"
+      - key: MYSQL_ALLOW_DELETE
+        value: "false"
       - key: MYSQL_MAX_ROWS
         value: "1000"
       - key: MYSQL_CONNECT_TIMEOUT_MS

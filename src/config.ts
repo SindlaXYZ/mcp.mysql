@@ -12,8 +12,13 @@ const ConfigSchema = z.object({
   port: z.number().int().positive(),
   /** Optional bearer token required on the `Authorization` header. Null = open. */
   authToken: z.string().min(1).nullable(),
-  /** When true, only read-only statements are accepted. */
-  readOnly: z.boolean(),
+  /** Per-operation allowlist. A statement runs only if its operation is enabled. */
+  allowedOperations: z.object({
+    select: z.boolean(),
+    insert: z.boolean(),
+    update: z.boolean(),
+    delete: z.boolean(),
+  }),
   /** Hard cap on rows returned per query. */
   maxRows: z.number().int().positive(),
   /** Optional allowlist of database hosts clients may connect to. Null = any. */
@@ -55,7 +60,13 @@ export function loadConfig(): Config {
   const raw = {
     port: parseInteger(process.env.PORT, 3000),
     authToken: token !== undefined && token.trim() !== "" ? token : null,
-    readOnly: parseBool(process.env.MYSQL_READONLY, true),
+    // Safe default: read-only — SELECT enabled, all writes disabled.
+    allowedOperations: {
+      select: parseBool(process.env.MYSQL_ALLOW_SELECT, true),
+      insert: parseBool(process.env.MYSQL_ALLOW_INSERT, false),
+      update: parseBool(process.env.MYSQL_ALLOW_UPDATE, false),
+      delete: parseBool(process.env.MYSQL_ALLOW_DELETE, false),
+    },
     maxRows: parseInteger(process.env.MYSQL_MAX_ROWS, 1000),
     allowedDbHosts: parseList(process.env.ALLOWED_DB_HOSTS),
     connectTimeoutMs: parseInteger(process.env.MYSQL_CONNECT_TIMEOUT_MS, 10000),

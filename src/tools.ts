@@ -1,9 +1,10 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Database } from "./db.js";
+import type { AllowedOperations, Database } from "./db.js";
 
 interface ToolOptions {
   maxRows: number;
+  allowedOperations: AllowedOperations;
 }
 
 function toJson(value: unknown): string {
@@ -117,12 +118,20 @@ export function registerTools(server: McpServer, db: Database | null, options: T
     },
   );
 
+  const enabledOperations =
+    (["select", "insert", "update", "delete"] as const)
+      .filter((op) => options.allowedOperations[op])
+      .map((op) => op.toUpperCase())
+      .join(", ") || "none";
+
   server.registerTool(
     "run_query",
     {
       title: "Run SQL query",
       description: [
-        "Execute a single read-only SQL query and return the rows as JSON.",
+        "Execute a single SQL statement and return the result as JSON.",
+        `Operations enabled on this server: ${enabledOperations}.`,
+        "SELECT/SHOW/DESCRIBE/EXPLAIN return rows; INSERT/UPDATE/DELETE return an affected-rows summary.",
         "Use ? placeholders for values and pass them in `params` (in order) to stay safe from injection.",
         `At most ${options.maxRows} rows are returned.`,
       ].join(" "),
@@ -130,7 +139,7 @@ export function registerTools(server: McpServer, db: Database | null, options: T
         sql: z
           .string()
           .min(1)
-          .describe("A single read-only SQL statement using ? placeholders for values"),
+          .describe("A single SQL statement using ? placeholders for values"),
         params: z
           .array(z.union([z.string(), z.number(), z.boolean(), z.null()]))
           .optional()
